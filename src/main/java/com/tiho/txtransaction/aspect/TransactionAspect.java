@@ -1,8 +1,10 @@
 package com.tiho.txtransaction.aspect;
 
+import com.alipay.sofa.rpc.common.utils.ClassTypeUtils;
 import com.tiho.txtransaction.annotation.TxTransactional;
+import com.tiho.txtransaction.entity.TransactionData;
 import com.tiho.txtransaction.service.TxTransactionManagerService;
-import com.tiho.txtransaction.util.TxContext;
+import com.tiho.txtransaction.util.TxTransactionContext;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -11,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -28,6 +31,9 @@ public class TransactionAspect implements InitializingBean, Ordered {
     @Autowired
     private TxTransactionManagerService txTransactionManagerService;
 
+    @Value("${spring.application.name}")
+    private String appName;
+
     @Override
     public void afterPropertiesSet() {
         logger.debug("TransactionAspect init");
@@ -35,43 +41,62 @@ public class TransactionAspect implements InitializingBean, Ordered {
 
     @Around("@annotation(com.tiho.txtransaction.annotation.TxTransactional)")
     public Object aroundTransactional(ProceedingJoinPoint point) throws Throwable {
-        Method method = ((MethodSignature) point.getSignature()).getMethod();
+        Object target = point.getTarget();
+        String className = target.getClass().getName();
+        MethodSignature signature = (MethodSignature) point.getSignature();
+        Method method = signature.getMethod();
+        String methodName = method.getName();
+        Object[] args = point.getArgs();
+        Class[] argsTypes = method.getParameterTypes();
+        String[] types = ClassTypeUtils.getTypeStrs(argsTypes, true);
         TxTransactional transactional = method.getAnnotation(TxTransactional.class);
 
-        ServletRequestAttributes servletRequestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        HttpServletRequest request = servletRequestAttributes.getRequest();
-        String txId = request.getHeader(TxContext.TxId);
-        boolean head;
+        HttpServletRequest request = getHttpServletRequest();
+        if (null == request) {
+            Object result = point.proceed();
+            return result;
+        }
+
+        String txId = request.getHeader(TxTransactionContext.TxId);
         if (null == txId) {
             int timeout = transactional.timeout();
             txId = txTransactionManagerService.createTransactionGroup(timeout);
-            head = true;
-        } else {
-            txTransactionManagerService.addTransactionGroup(txId);
-            head = false;
-        }
-        try {
-            TxContext.set(txId);
-            logger.debug("TxTransaction begin");
-            Object result = point.proceed();
-            if (head) {
-                logger.debug("TxTransaction send commit");
+            try {
+                TxTransactionContext.current().setTxId(txId);
+                logger.debug("TxTransaction begin");
+                Object result = point.proceed();
+                logger.debug("TxTransaction commit");
                 txTransactionManagerService.commitTransactionGroup(txId);
-            } else {
-                logger.debug("TxTransaction waiting commit");
-            }
-            return result;
-        } catch (Throwable e) {
-            if (head) {
-                logger.debug("TxTransaction send rollback");
+                return result;
+            } catch (Throwable e) {
+                logger.debug("TxTransaction rollback");
                 txTransactionManagerService.rollbackTransactionGroup(txId);
-            } else {
-                logger.debug("TxTransaction waiting rollback");
+                throw e;
+            } finally {
+                TxTransactionContext.remove();
             }
-            throw e;
-        } finally {
-            TxContext.remove();
+        } else {
+            try {
+                TxTransactionContext.current().setTxId(txId);
+                logger.debug("TxTransaction join");
+                Object result = point.proceed();
+                logger.debug("TxTransaction waiting");
+                TransactionData transactionData = new TransactionData(txId, appName, className, methodName, args, types);
+                txTransactionManagerService.addTransactionGroup(txId, transactionData);
+                return result;
+            } finally {
+                TxTransactionContext.remove();
+            }
         }
+    }
+
+    private HttpServletRequest getHttpServletRequest() {
+        ServletRequestAttributes servletRequestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (null == servletRequestAttributes) {
+            return null;
+        }
+        HttpServletRequest request = servletRequestAttributes.getRequest();
+        return request;
     }
 
     @Override

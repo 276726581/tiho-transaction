@@ -1,8 +1,8 @@
 package com.tiho.txtransaction.aspect;
 
 import com.tiho.txtransaction.service.impl.LocalTxTransactionService;
-import com.tiho.txtransaction.support.TxProxyConnection;
-import com.tiho.txtransaction.util.TxContext;
+import com.tiho.txtransaction.support.db.DbProxyConnection;
+import com.tiho.txtransaction.util.TxTransactionContext;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
@@ -31,15 +31,14 @@ public class DataSourceAspect implements InitializingBean, Ordered {
 
     @Around("execution(* javax.sql.DataSource.getConnection(..))")
     public Connection aroundGetConnection(ProceedingJoinPoint point) throws Throwable {
-        Connection result = (Connection) point.proceed();
-        String txId = TxContext.current();
+        Connection connection = (Connection) point.proceed();
+        String txId = TxTransactionContext.current().getTxId();
         if (null == txId) {
-            return result;
+            return connection;
         }
 
-        TxProxyConnection txProxyConnection = new TxProxyConnection(result);
-        localTxTransactionService.addConnection(txId, txProxyConnection);
-        return txProxyConnection;
+        DbProxyConnection dbProxyConnection = localTxTransactionService.addConnection(txId, connection);
+        return dbProxyConnection;
     }
 
     @Override

@@ -8,12 +8,12 @@ import com.alipay.sofa.rpc.core.request.SofaRequest;
 import com.alipay.sofa.rpc.core.response.SofaResponse;
 import com.tiho.txtransaction.proxy.RpcInvoker;
 import com.tiho.txtransaction.service.TxTransactionManagerService;
+import com.tiho.txtransaction.service.impl.TxTransactionManagerServiceImpl;
 import com.tiho.txtransaction.util.InvokeContextUtil;
 import com.tiho.txtransaction.util.TxConnectionContext;
+import com.tiho.txtransaction.util.TxConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Set;
 
 public class TxManagerServer {
 
@@ -22,14 +22,14 @@ public class TxManagerServer {
     private int port;
     private static RpcServer rpcServer;
 
-    private TxTransactionManagerService txTransactionManagerService;
+    private TxTransactionManagerServiceImpl txTransactionManagerService;
     private RpcInvoker<TxTransactionManagerService> rpcInvoker;
 
     static {
         SofaRpcSerializationRegister.registerCustomSerializer();
     }
 
-    public void setTxTransactionManagerService(TxTransactionManagerService txTransactionManagerService) {
+    public void setTxTransactionManagerServiceImpl(TxTransactionManagerServiceImpl txTransactionManagerService) {
         this.txTransactionManagerService = txTransactionManagerService;
     }
 
@@ -84,27 +84,32 @@ public class TxManagerServer {
 
     private void onRequest(BizContext bizCtx, AsyncContext asyncCtx, SofaRequest request) {
         try {
-            try {
-                Connection connection = bizCtx.getConnection();
-                TxConnectionContext.set(connection);
-                SofaResponse response = rpcInvoker.invoke(request);
-                asyncCtx.sendResponse(response);
-            } finally {
-                TxConnectionContext.remove();
-            }
+            Connection connection = bizCtx.getConnection();
+            TxConnectionContext.set(connection);
+            setRpcInvokeContext(bizCtx, asyncCtx, request);
+            SofaResponse response = rpcInvoker.invoke(request);
+            asyncCtx.sendResponse(response);
         } catch (Exception e) {
             logger.error(e.getMessage(), e);
+        } finally {
+            TxConnectionContext.remove();
         }
     }
 
-    private void onClose(String remoteAddr, Connection conn) {
-        Set<String> txIdSet = conn.getPoolKeys();
-        for (String txId : txIdSet) {
-            try {
-                rpcInvoker.getRef().rollbackTransactionGroup(txId);
-            } catch (Exception e) {
-                logger.error(e.getMessage(), e);
-            }
+    private void setRpcInvokeContext(BizContext bizCtx, AsyncContext asyncCtx, SofaRequest request) {
+        Connection connection = bizCtx.getConnection();
+        String serviceName = (String) request.getRequestProp(TxConstants.ServiceName);
+        connection.setAttribute(TxConstants.ServiceName, serviceName);
+    }
+
+    private void onClose(String remoteAddr, Connection connection) {
+        try {
+            TxConnectionContext.set(connection);
+            txTransactionManagerService.unRegisterServiceConnection(connection);
+        } catch (Exception e) {
+            logger.error(e.getMessage(), e);
+        } finally {
+            TxConnectionContext.remove();
         }
     }
 }

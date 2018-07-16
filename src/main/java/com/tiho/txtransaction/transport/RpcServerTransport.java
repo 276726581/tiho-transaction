@@ -8,6 +8,8 @@ import com.tiho.txtransaction.util.TxConnectionContext;
 
 public class RpcServerTransport implements RpcTransport {
 
+    public static final String ScopeName = "sendClient";
+
     private int timeout;
 
     public RpcServerTransport(int timeout) {
@@ -16,7 +18,7 @@ public class RpcServerTransport implements RpcTransport {
 
     @Override
     public SofaResponse invoke(SofaRequest sofaRequest) throws Exception {
-        Connection connection = TxConnectionContext.get();
+        Connection connection = TxConnectionContext.get(ScopeName);
         SofaResponse sofaResponse = TxManagerServer.invokeSync(connection, sofaRequest, timeout);
         return sofaResponse;
     }

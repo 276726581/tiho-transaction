@@ -1,4 +1,4 @@
-package com.tiho.txtransaction.support;
+package com.tiho.txtransaction.support.db;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,14 +8,24 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Executor;
 
-public class TxProxyConnection implements Connection {
+public class DbProxyConnection implements Connection {
 
-    private Logger logger = LoggerFactory.getLogger(TxProxyConnection.class);
+    private Logger logger = LoggerFactory.getLogger(DbProxyConnection.class);
 
     private Connection connection;
 
-    public TxProxyConnection(Connection connection) {
+    public DbProxyConnection(Connection connection) {
         this.connection = connection;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        return connection.equals(obj);
+    }
+
+    @Override
+    public int hashCode() {
+        return connection.hashCode();
     }
 
     @Override

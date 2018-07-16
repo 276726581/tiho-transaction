@@ -33,7 +33,8 @@ public class RpcInvoker<T> implements Invoker {
         String appName = request.getTargetAppName();
         String serviceName = request.getTargetServiceUniqueName();
         String methodName = request.getMethodName();
-        Method serviceMethod = ReflectCache.getOverloadMethodCache(serviceName, methodName, request.getMethodArgSigs());
+        String[] methodArgSigs = request.getMethodArgSigs();
+        Method serviceMethod = ReflectCache.getOverloadMethodCache(serviceName, methodName, methodArgSigs);
         if (serviceMethod == null) {
             SofaRpcException throwable = cannotFoundServiceMethod(appName, methodName, serviceName);
             SofaResponse response = MessageBuilder.buildSofaErrorResponse(throwable.getMessage());

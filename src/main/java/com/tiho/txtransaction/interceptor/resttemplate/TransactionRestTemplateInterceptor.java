@@ -1,6 +1,7 @@
 package com.tiho.txtransaction.interceptor.resttemplate;
 
-import com.tiho.txtransaction.util.TxContext;
+import com.tiho.txtransaction.util.TxTransactionContext;
+import com.tiho.txtransaction.util.TxTransactionContext;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
@@ -12,9 +13,9 @@ public class TransactionRestTemplateInterceptor implements ClientHttpRequestInte
 
     @Override
     public ClientHttpResponse intercept(HttpRequest httpRequest, byte[] bytes, ClientHttpRequestExecution execution) throws IOException {
-        String txId = TxContext.current();
+        String txId = TxTransactionContext.current().getTxId();
         if (!StringUtils.isEmpty(txId)) {
-            httpRequest.getHeaders().add(TxContext.TxId, txId);
+            httpRequest.getHeaders().add(TxTransactionContext.TxId, txId);
         }
         ClientHttpResponse response = execution.execute(httpRequest, bytes);
         return response;
