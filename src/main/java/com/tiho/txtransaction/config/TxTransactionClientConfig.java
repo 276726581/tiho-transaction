@@ -1,6 +1,6 @@
 package com.tiho.txtransaction.config;
 
-import com.tiho.txtransaction.annotation.TxTransactionalServiceScanner;
+import com.tiho.txtransaction.annotation.TxTransactionalServiceProcessor;
 import com.tiho.txtransaction.entity.TxTransactionManagerServiceConfig;
 import com.tiho.txtransaction.interceptor.feign.TransactionFeignInterceptor;
 import com.tiho.txtransaction.service.TxTransactionManagerService;
@@ -9,10 +9,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Import;
 
 @ComponentScan("com.tiho.txtransaction.aspect")
-@Import(TxTransactionalServiceScanner.class)
 @Configuration
 public class TxTransactionClientConfig {
 
@@ -27,6 +25,11 @@ public class TxTransactionClientConfig {
 
     @Value("${tx.manager.timeout}")
     private int timeout;
+
+    @Bean
+    public TxTransactionalServiceProcessor txTransactionalServiceProcessor() {
+        return new TxTransactionalServiceProcessor();
+    }
 
     @Bean
     public TransactionFeignInterceptor transactionFeignInterceptor() {
