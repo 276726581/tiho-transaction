@@ -59,8 +59,17 @@ public class LocalTxTransactionService implements TxTransactionService {
     @Override
     public void compensateTransaction(TransactionData data) throws Exception {
         Class clazz = ReflectCache.getClassCache(data.getClassName());
+        if (null == clazz) {
+            throw new NotFoundException();
+        }
         Method method = ReflectCache.getOverloadMethodCache(data.getClassName(), data.getMethodName(), data.getArgsType());
+        if (null == method) {
+            throw new NotFoundException();
+        }
         Object bean = beanFactory.getBean(clazz);
+        if (null == bean) {
+            throw new NotFoundException();
+        }
         method.invoke(bean, data.getArgs());
     }
 
