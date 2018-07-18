@@ -26,10 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -50,78 +47,18 @@ public class TxTransactionManagerServiceImpl implements TxTransactionManagerServ
     @Autowired
     private TxTransactionStorageService txTransactionStorageService;
 
-    public TxTransactionManagerServiceImpl() {
-    }
-
     @Override
     public void afterPropertiesSet() {
         if (null == txTransactionService) {
             throw new NullPointerException("txTransactionService is null");
         }
+
         ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(3);
-        scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                for (Map.Entry<String, TxGroup> entry : txGroupMap.entrySet()) {
-                    try {
-                        String txId = entry.getKey();
-                        TxGroup txGroup = entry.getValue();
-                        long timeout = txGroup.getTimeout();
-                        if (-1 == timeout) {
-                            continue;
-                        }
+        scheduledExecutorService.scheduleAtFixedRate(new TransactionTimeoutTask(), 0, 100, TimeUnit.MILLISECONDS);
 
-                        long createTime = txGroup.getCreateTime();
-                        long now = System.currentTimeMillis();
-                        if ((now - createTime) > timeout) {
-                            logger.debug("timeout: txId=" + txId);
-                            rollbackTransactionGroup(txId);
-                        }
-                    } catch (Exception e) {
-                        logger.error(e.getMessage(), e);
-                    }
-                }
-            }
-        }, 0, 100, TimeUnit.MILLISECONDS);
-        scheduledExecutorService.execute(new Runnable() {
-            @Override
-            public void run() {
-                // TODO: 2018/7/16 事务补偿
-                while (true) {
-                    try {
-                        Set<String> serviceSet = serviceMap.keySet();
-                        for (String serviceName : serviceSet) {
-                            Set<Connection> connections = serviceMap.get(serviceName);
-                            if (connections.isEmpty()) {
-                                continue;
-                            }
+        ExecutorService executorService = Executors.newFixedThreadPool(3);
+        executorService.execute(new CompensateTransactionTask());
 
-                            TransactionData transactionData = txTransactionStorageService.getOneCompensateTransaction(serviceName);
-                            if (null != transactionData) {
-                                try {
-                                    List<Connection> list = new ArrayList<>(connections);
-                                    int size = connections.size();
-                                    int rand = RandomUtils.nextInt(size);
-                                    Connection connection = list.get(rand);
-                                    TxConnectionContext.set(RpcServerTransport.ScopeName, connection);
-                                    txTransactionService.compensateTransaction(transactionData);
-                                } catch (Exception e) {
-                                    logger.error(e.getMessage(), e);
-                                    txTransactionStorageService.saveCompensateTransaction(serviceName, transactionData);
-                                }
-                            }
-                        }
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException ex) {
-                            logger.error(ex.getMessage());
-                        }
-                    } catch (Exception e) {
-                        logger.error(e.getMessage(), e);
-                    }
-                }
-            }
-        });
         EventBus.register(OnServiceRegisteredEvent.class, new Subscriber() {
             @Override
             public void onEvent(Event event) {
@@ -247,9 +184,73 @@ public class TxTransactionManagerServiceImpl implements TxTransactionManagerServ
             }
         }
         if (!compensateList.isEmpty()) {
-            for (TransactionData data : compensateList) {
-                String serviceName = data.getServiceName();
-                txTransactionStorageService.saveCompensateTransaction(serviceName, data);
+            txTransactionStorageService.saveCompensateTransaction(compensateList);
+        }
+    }
+
+    private class TransactionTimeoutTask implements Runnable {
+
+        @Override
+        public void run() {
+            for (Map.Entry<String, TxGroup> entry : txGroupMap.entrySet()) {
+                try {
+                    String txId = entry.getKey();
+                    TxGroup txGroup = entry.getValue();
+                    long timeout = txGroup.getTimeout();
+                    if (-1 == timeout) {
+                        continue;
+                    }
+
+                    long createTime = txGroup.getCreateTime();
+                    long now = System.currentTimeMillis();
+                    if ((now - createTime) > timeout) {
+                        logger.debug("timeout: txId=" + txId);
+                        rollbackTransactionGroup(txId);
+                    }
+                } catch (Exception e) {
+                    logger.error(e.getMessage(), e);
+                }
+            }
+        }
+    }
+
+    private class CompensateTransactionTask implements Runnable {
+
+        @Override
+        public void run() {
+            // TODO: 2018/7/16 事务补偿
+            while (true) {
+                try {
+                    Set<String> serviceSet = serviceMap.keySet();
+                    for (String serviceName : serviceSet) {
+                        Set<Connection> connections = serviceMap.get(serviceName);
+                        if (connections.isEmpty()) {
+                            continue;
+                        }
+
+                        TransactionData transactionData = txTransactionStorageService.getOneCompensateTransaction(serviceName);
+                        if (null != transactionData) {
+                            try {
+                                List<Connection> list = new ArrayList<>(connections);
+                                int size = connections.size();
+                                int rand = RandomUtils.nextInt(size);
+                                Connection connection = list.get(rand);
+                                TxConnectionContext.set(RpcServerTransport.ScopeName, connection);
+                                txTransactionService.compensateTransaction(transactionData);
+                            } catch (Exception e) {
+                                logger.error(e.getMessage(), e);
+                                txTransactionStorageService.saveCompensateTransaction(serviceName, transactionData);
+                            }
+                        }
+                    }
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException ex) {
+                        logger.error(ex.getMessage());
+                    }
+                } catch (Exception e) {
+                    logger.error(e.getMessage(), e);
+                }
             }
         }
     }

@@ -3,6 +3,7 @@ package com.tiho.txtransaction.service.impl;
 import com.alipay.sofa.rpc.common.cache.ReflectCache;
 import com.alipay.sofa.rpc.common.struct.ConcurrentHashSet;
 import com.tiho.txtransaction.entity.TransactionData;
+import com.tiho.txtransaction.exception.NotFoundException;
 import com.tiho.txtransaction.service.TxTransactionService;
 import com.tiho.txtransaction.support.db.DbProxyConnection;
 import org.slf4j.Logger;
